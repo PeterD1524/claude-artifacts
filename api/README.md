@@ -52,7 +52,7 @@ For `frame-live.v1`, the observed boot token was offered as the second WebSocket
 
 The client distinguishes unauthorized and forbidden responses, 404, 409 conflicts and rate limits, but the same HTTP status can have different causes. In particular, a 409 deploy can mean a stale version or `publish_settling`; a 404 can reflect routing or authorization. Error body shapes and every status code are not fully established, so generic responses in OpenAPI are deliberately permissive.
 
-The files do not enumerate every internal browser, live-document, thumbnail, relay, share, database or typed-artifact method. Their omission does not imply nonexistence. The account-specific live runtime contract and `*.d.ts` resources describe capabilities granted to an artifact page, not a complete server API. The [skill reference](../skills/README.md) provides page-authoring context.
+The files do not enumerate every internal browser, live-document, thumbnail, relay, share, database or typed-artifact method. Their omission does not imply nonexistence. The [runtime contracts](../runtime/README.md) describe capabilities granted to an artifact page, not a complete server API. The [skill reference](../skills/README.md) provides page-authoring context.
 
 ## Validation
 

@@ -1,0 +1,1 @@
+{"version":"0.2.87","capabilities":["artifact","assets","comments","db","downloads","files","mcp","permissions","room","sample","self","user"],"claude":true,"core":["permissions"],"features":{"mcp":{"host":{}}}}

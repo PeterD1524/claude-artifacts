@@ -139,4 +139,4 @@ For an update, the community client's manifest path adds the existing `slug` and
 * [Community CLI](https://github.com/nikships/claude-artifact-cli) — private API client including comments and polling watch; its existence does not establish push integration with an agent host.
 * [Community MCP implementation](https://github.com/kamilio/claude-artifacts) — publishing-oriented tool interface; inspected implementation did not include a comments/watch path.
 * [Community runtime analysis](https://github.com/tarqd/claude-artifact-harness/blob/main/docs/analysis/shell.md) — independent reverse engineering of viewer runtime and transports; not an Anthropic-hosted publishing client.
-* [Skill provenance](skills/README.md) — preserved Claude skill copies and limitations.
+* [Skills](skills/README.md) and [runtime contracts](runtime/README.md) — the bundled skill files and versioned capability definitions.
