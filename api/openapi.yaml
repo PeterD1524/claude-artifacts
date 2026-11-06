@@ -1,0 +1,736 @@
+openapi: 3.2.1
+info:
+  title: Claude Artifacts frame HTTP API (unofficial)
+  version: 2026-11-06-research
+  summary: Partial reverse-engineered description of the Claude-hosted frame API.
+  description: |
+    This document is not authored, endorsed, or maintained by Anthropic. It
+    describes the private Claude Code artifact control plane observed or
+    inferred on 2026-11-06. Fields are deliberately permissive where their
+    complete server constraints are unknown. Each operation has an x-evidence
+    value: observed-read, client-code, or community-client. A valid description
+    does not prove that the server currently accepts a request. See README.md.
+servers:
+  - url: https://api.anthropic.com
+    description: Direct Claude Code control plane; cloud relay paths differ.
+security:
+  - ClaudeOAuth: []
+    OAuthBeta: []
+tags:
+  - name: Artifacts
+  - name: Deployment
+  - name: Comments
+  - name: Content
+  - name: Sharing
+  - name: Data
+  - name: Assets
+  - name: Types
+  - name: Runtime contract
+paths:
+  /api/frame/frames:
+    get:
+      tags: [Artifacts]
+      operationId: listArtifacts
+      x-evidence: community-client
+      description: List accessible frames. Exact pagination and response variants are not established.
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer}
+      responses:
+        '2XX':
+          description: A list or a wrapper containing a frame list, as accepted by the community client.
+          content:
+            application/json:
+              schema: {}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/{slug}:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    get:
+      tags: [Artifacts]
+      operationId: bootArtifact
+      x-evidence: observed-read
+      description: Boot metadata, manifest and per-artifact credentials. Availability varies by identity, role and server flags.
+      parameters:
+        - name: via
+          in: query
+          description: Claude Code uses model_read for an agent read.
+          schema: {type: string, example: model_read}
+      responses:
+        '200':
+          description: Boot record. Tokens are sensitive and short-lived.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Boot'}
+        default: {$ref: '#/components/responses/UnknownError'}
+    delete:
+      tags: [Artifacts]
+      operationId: deleteArtifact
+      x-evidence: community-client
+      description: Permanently delete an artifact. Not tested in this investigation.
+      responses:
+        '2XX': {description: Deletion accepted; response body not established.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/read/{slug}:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    get:
+      tags: [Artifacts]
+      operationId: readArtifactMetadata
+      x-evidence: observed-read
+      description: Read ownership, sharing, stored contract and capabilities where available.
+      responses:
+        '200':
+          description: Metadata; shape is not exhaustively known.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/versions/{slug}:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    get:
+      tags: [Artifacts]
+      operationId: listArtifactVersions
+      x-evidence: observed-read
+      responses:
+        '200':
+          description: Version history; structure and pagination are not fully specified.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/retitle/{slug}:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    post:
+      tags: [Artifacts]
+      operationId: retitleArtifact
+      x-evidence: community-client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {title: {type: string}}
+              required: [title]
+      responses:
+        '2XX': {description: Rename result; exact body not established.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/favorite/{slug}:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    post:
+      tags: [Artifacts]
+      operationId: favoriteArtifact
+      x-evidence: community-client
+      responses:
+        '2XX': {description: Favorite added; response body unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+    delete:
+      tags: [Artifacts]
+      operationId: unfavoriteArtifact
+      x-evidence: community-client
+      responses:
+        '2XX': {description: Favorite removed; response body unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/deploy/direct:
+    post:
+      tags: [Deployment]
+      operationId: deployArtifact
+      x-evidence: client-code-and-community-client
+      description: |
+        Create or update a version. One path uses content, another a manifest.
+        The exact complete schema and all requirements are unknown. A conflict
+        must not be silently forced; uncertain responses require reconciliation.
+      parameters:
+        - name: attempt_id
+          in: query
+          description: Attempt identity used by Claude Code; precise lifecycle unverified.
+          schema: {type: string}
+        - name: resend
+          in: query
+          description: Claude Code can set 1 for a retry of an identified attempt; semantics unverified.
+          schema: {type: integer, enum: [1]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeployRequest'}
+      responses:
+        '2XX':
+          description: Publish result; community client expects slug.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeployResponse'}
+        '409':
+          description: Conflict or another 409 condition such as publish_settling; inspect the body.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/deploy/prepare:
+    post:
+      tags: [Deployment]
+      operationId: prepareUpload
+      x-evidence: community-client
+      description: Reserve or reuse an artifact identity and find missing content hashes before staging.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slug: {type: string}
+                shas:
+                  type: array
+                  items: {type: string, description: SHA-256 hex of raw file bytes.}
+              required: [shas]
+              additionalProperties: true
+      responses:
+        '2XX':
+          description: Community client expects slug and optionally missing hashes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slug: {type: string}
+                  missing: {type: array, items: {type: string}}
+                additionalProperties: true
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/upload:
+    post:
+      tags: [Deployment]
+      operationId: uploadDeploymentFiles
+      x-evidence: community-client
+      description: Stage files or request copies before deploying a manifest. Exact limits and full schema are unknown.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slug: {type: string}
+                files:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      path: {type: string}
+                      content: {type: string, description: UTF-8 text or base64 according to content type.}
+                      contentType: {type: string}
+                      from: {type: object, additionalProperties: true}
+                    additionalProperties: true
+              required: [slug, files]
+              additionalProperties: true
+      responses:
+        '2XX': {description: Staging result; body not established.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/comments/{slug}:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    get:
+      tags: [Comments]
+      operationId: listComments
+      x-evidence: observed-read
+      description: |
+        Read comment threads. The observed artifact had an empty threads array;
+        fields for populated threads are from a community implementation.
+      parameters:
+        - name: names
+          in: query
+          description: Community client sends 1 to request account display names.
+          schema: {type: integer, enum: [1]}
+      responses:
+        '200':
+          description: Comment thread collection.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommentList'}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/comments/{slug}/{thread}:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+      - $ref: '#/components/parameters/Thread'
+    post:
+      tags: [Comments]
+      operationId: replyToComment
+      x-evidence: client-code-and-community-client
+      description: Reply as Claude. Activation, account and session restrictions apply. No write was reproduced in this investigation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: {type: string, description: Client-generated UUID used by the community client for idempotent retries.}
+                text: {type: string}
+                answers_summon: {type: boolean}
+              required: [text]
+              additionalProperties: true
+      responses:
+        '201':
+          description: Community client reports thread_id, comment_id and optional replayed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread_id: {type: string}
+                  comment_id: {type: string}
+                  replayed: {type: boolean}
+                additionalProperties: true
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/comments/{slug}/{thread}/session-resolve:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+      - $ref: '#/components/parameters/Thread'
+    post:
+      tags: [Comments]
+      operationId: resolveSessionComment
+      x-evidence: client-code-and-community-client
+      description: Session-mediated resolution. A distinct browser/relay resolve route also exists; authorization differs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {resolved: {type: boolean}}
+              required: [resolved]
+              additionalProperties: true
+      responses:
+        '2XX': {description: Resolution result; full body is unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/perm/{slug}:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    get:
+      tags: [Sharing]
+      operationId: readSharing
+      x-evidence: community-client
+      responses:
+        '2XX': {description: Sharing state and version; full schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+    patch:
+      tags: [Sharing]
+      operationId: updateSharing
+      x-evidence: community-client
+      description: Community client uses If-Match for optimistic concurrency; change schema is not exhaustively specified here.
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '2XX': {description: Sharing update result; schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/db/agent:
+    post:
+      tags: [Data]
+      operationId: agentDatabaseOperation
+      x-evidence: community-client
+      description: Agent-side DB access, distinct from the in-page db capability. Exact operation-specific schemas and permissions vary.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slug: {type: string}
+                verb: {type: string, examples: [get, list, query, set, update, delete, batch, whoami]}
+                args: {type: object, additionalProperties: true}
+              required: [slug, verb, args]
+              additionalProperties: true
+      responses:
+        '2XX': {description: Operation-specific result; schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/blob/{slug}/agent-list:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    post:
+      tags: [Assets]
+      operationId: listAssets
+      x-evidence: community-client
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {limit: {type: integer}, after: {type: string}}
+              additionalProperties: true
+      responses:
+        '2XX': {description: 'Assets, usage and optional next cursor, per community client.'}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/blob/{slug}/agent-upload:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    post:
+      tags: [Assets]
+      operationId: uploadAsset
+      x-evidence: community-client
+      description: The request body is raw bytes and Content-Type is the uploaded asset's type.
+      requestBody:
+        required: true
+        content:
+          '*/*':
+            schema: {type: string, contentMediaType: application/octet-stream}
+      responses:
+        '2XX': {description: Community client expects opaque_id; full response schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/blob/{slug}/agent-copy:
+    parameters: [{$ref: '#/components/parameters/Slug'}]
+    post:
+      tags: [Assets]
+      operationId: copyAssets
+      x-evidence: community-client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from: {type: string}
+                ids: {type: array, items: {type: string}}
+              required: [from, ids]
+              additionalProperties: true
+      responses:
+        '2XX': {description: Copy result; full schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/blob/{slug}/{assetId}/agent-delete:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+      - name: assetId
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Assets]
+      operationId: deleteAsset
+      x-evidence: community-client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+            example: {}
+      responses:
+        '2XX': {description: Deletion result; full schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/types:
+    get:
+      tags: [Types]
+      operationId: listArtifactTypes
+      x-evidence: observed-read
+      responses:
+        '200':
+          description: Account-specific visible types, in an object containing types.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {types: {type: array, items: {type: object, additionalProperties: true}}}
+                additionalProperties: true
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/types/{typeSlug}:
+    parameters: [{$ref: '#/components/parameters/TypeSlug'}]
+    get:
+      tags: [Types]
+      operationId: readArtifactType
+      x-evidence: observed-read
+      responses:
+        '200': {description: Type definition and manifest; full schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/types/{typeSlug}/files/{filePath}:
+    parameters:
+      - $ref: '#/components/parameters/TypeSlug'
+      - $ref: '#/components/parameters/FilePath'
+    get:
+      tags: [Types]
+      operationId: readArtifactTypeFile
+      x-evidence: observed-read
+      description: Returns text and a truncated indicator; inspect it before relying on the contents.
+      responses:
+        '200':
+          description: Type file response; may be truncated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {text: {type: string}, truncated: {type: boolean}}
+                additionalProperties: true
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/types/{typeSlug}/instances:
+    parameters: [{$ref: '#/components/parameters/TypeSlug'}]
+    get:
+      tags: [Types]
+      operationId: listTypeInstances
+      x-evidence: community-client
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer}
+      responses:
+        '2XX': {description: Community client expects an instances array; full schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/types/{typeSlug}/create:
+    parameters: [{$ref: '#/components/parameters/TypeSlug'}]
+    post:
+      tags: [Types]
+      operationId: createArtifactFromType
+      x-evidence: community-client
+      parameters:
+        - name: idempotency_key
+          in: query
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                target_type_version: {type: [string, 'null']}
+              additionalProperties: true
+      responses:
+        '2XX': {description: Community client expects slug; complete schema unknown.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/contract/latest:
+    get:
+      tags: [Runtime contract]
+      operationId: readLatestRuntimeContract
+      x-evidence: observed-read
+      description: |
+        Account-specific live capability roster. In one isolated test bearer
+        and beta alone returned 404; adding X-Frame-CP: go returned 200.
+      parameters:
+        - $ref: '#/components/parameters/FrameControlPlane'
+      responses:
+        '200':
+          description: Runtime contract roster.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeContract'}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/contract/{version}:
+    parameters: [{$ref: '#/components/parameters/ContractVersion'}]
+    get:
+      tags: [Runtime contract]
+      operationId: readRuntimeContract
+      x-evidence: client-code
+      responses:
+        '2XX': {description: Version-specific contract roster.}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/contract/{version}/prompt:
+    parameters: [{$ref: '#/components/parameters/ContractVersion'}]
+    get:
+      tags: [Runtime contract]
+      operationId: readRuntimePrompt
+      x-evidence: observed-read
+      responses:
+        '200':
+          description: Server-supplied capability guidance.
+          content:
+            text/plain:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /api/frame/contract/{version}/{capability}.d.ts:
+    parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - name: capability
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Runtime contract]
+      operationId: readRuntimeTypes
+      x-evidence: observed-read
+      responses:
+        '200':
+          description: Version-specific TypeScript declarations.
+          content:
+            text/plain:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/UnknownError'}
+  /_f/{version}/_src/{filePath}:
+    servers:
+      - url: https://{slug}.frame.claudeusercontent.com
+        variables:
+          slug: {default: artifact-uuid, description: Canonical artifact UUID.}
+    parameters:
+      - name: version
+        in: path
+        required: true
+        schema: {type: string}
+      - $ref: '#/components/parameters/FilePath'
+      - name: __frame_t
+        in: query
+        required: true
+        description: Short-lived boot assetToken; it is not the OAuth token.
+        schema: {type: string}
+    get:
+      tags: [Content]
+      operationId: readStoredSource
+      x-evidence: observed-read
+      security: []
+      description: |
+        Versioned stored source, fetched from the isolated content host. The
+        path can include multiple percent-encoded segments; OpenAPI tooling
+        must not incorrectly encode the segment separators. Do not send the
+        control-plane OAuth bearer to this host. The hosted document may wrap
+        the local input fragment.
+      responses:
+        '200':
+          description: Source bytes; actual media type depends on the file.
+          content:
+            '*/*':
+              schema: {type: string, contentMediaType: application/octet-stream}
+        default: {$ref: '#/components/responses/UnknownError'}
+components:
+  securitySchemes:
+    ClaudeOAuth:
+      type: http
+      scheme: bearer
+      description: Claude account OAuth access token, not an Anthropic API key.
+    OAuthBeta:
+      type: apiKey
+      in: header
+      name: anthropic-beta
+      description: Claude Code sends oauth-2025-04-20; endpoint-wide necessity is not proved.
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: Canonical artifact identity. URL short IDs are decoded before use by the client.
+      schema: {type: string}
+    Thread:
+      name: thread
+      in: path
+      required: true
+      schema: {type: string}
+    TypeSlug:
+      name: typeSlug
+      in: path
+      required: true
+      schema: {type: string}
+    FilePath:
+      name: filePath
+      in: path
+      required: true
+      description: Clean relative file path, potentially multiple URL path segments.
+      schema: {type: string}
+    ContractVersion:
+      name: version
+      in: path
+      required: true
+      schema: {type: string, example: 0.2.96}
+    FrameControlPlane:
+      name: X-Frame-CP
+      in: header
+      required: true
+      description: Value go succeeded in the observed contract header-isolation test.
+      schema: {type: string, const: go}
+  responses:
+    UnknownError:
+      description: Error status and body vary by route, gateway, account, and version.
+  schemas:
+    Boot:
+      type: object
+      properties:
+        ver: {type: string, description: Current version identifier.}
+        assetToken: {type: string, description: Short-lived content-host credential.}
+        subscriptionToken: {type: string, description: Short-lived frame-live subscription credential.}
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              path: {type: string}
+              size: {type: integer}
+              contentType: {type: string}
+              sha256: {type: string}
+            additionalProperties: true
+        perm:
+          type: object
+          properties: {role: {type: string}}
+          additionalProperties: true
+      additionalProperties: true
+    DeployRequest:
+      type: object
+      properties:
+        slug: {type: string, description: Omit when creating.}
+        title: {type: string}
+        description: {type: string}
+        favicon: {type: string}
+        content: {type: string, description: Used by a separate single-content client path.}
+        mode: {type: string, enum: [replace, patch]}
+        baseVersion: {type: string}
+        force: {type: boolean}
+        contract: {type: string}
+        capabilities: {type: object, additionalProperties: true}
+        manifest:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: 'null'
+              - type: object
+                properties:
+                  content: {type: string}
+                  contentType: {type: string}
+                  sha256: {type: string}
+                additionalProperties: true
+      additionalProperties: true
+    DeployResponse:
+      type: object
+      properties:
+        slug: {type: string}
+        version: {type: string}
+        manifest: {type: object, additionalProperties: true}
+      additionalProperties: true
+    CommentList:
+      type: object
+      properties:
+        threads:
+          type: array
+          items: {$ref: '#/components/schemas/CommentThread'}
+        names:
+          type: object
+          additionalProperties: {type: string}
+      additionalProperties: true
+    CommentThread:
+      type: object
+      description: Populated thread fields are from community source, not a newly observed populated response.
+      properties:
+        id: {type: string}
+        created_at: {type: string}
+        resolved_at: {type: [string, 'null']}
+        claude_activated_at: {type: [string, 'null']}
+        anchor: {type: object, additionalProperties: true}
+        comments:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              author: {type: object, additionalProperties: true}
+              text: {type: string}
+              created_at: {type: string}
+              to_claude_at: {type: [string, 'null']}
+            additionalProperties: true
+      additionalProperties: true
+    RuntimeContract:
+      type: object
+      properties:
+        version: {type: string}
+        capabilities: {type: array, items: {type: string}}
+        core: {type: array, items: {type: string}}
+        features: {type: object, additionalProperties: true}
+      additionalProperties: true

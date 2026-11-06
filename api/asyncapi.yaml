@@ -1,0 +1,162 @@
+asyncapi: 3.1.0
+info:
+  title: Claude Artifacts live WebSocket API (unofficial)
+  version: 2026-11-06-research
+  description: |
+    Partial, reverse-engineered description from the perspective of an agent
+    client, not an Anthropic-authored contract. The frame-live connection,
+    selected protocol, initial version and presence were observed; a comment
+    or version change was not induced. Frame-sync was inspected in client code
+    and independent community analysis, not tested end to end. Unknown fields
+    and messages are intentionally left unconstrained.
+servers:
+  claude:
+    host: claude.ai
+    protocol: wss
+    description: Claude viewer/live service; not the API control-plane host.
+channels:
+  frameLive:
+    address: /edge-api/frame-live/{slug}/ws
+    description: |
+      Legacy/local live subscription. The client obtains a short-lived
+      subscriptionToken from boot. Offer two WebSocket subprotocol values in
+      order: frame-live.v1 and the token. The server selected frame-live.v1 in
+      the observed connection. Do not log or persist the token.
+    servers:
+      - $ref: '#/servers/claude'
+    parameters:
+      slug:
+        description: Canonical artifact UUID in the observed handshake.
+    bindings:
+      ws:
+        method: GET
+        headers:
+          type: object
+          properties:
+            Sec-WebSocket-Protocol:
+              type: string
+              description: 'WebSocket subprotocol list: frame-live.v1, then the short-lived subscriptionToken.'
+        bindingVersion: 0.1.0
+    messages:
+      version: {$ref: '#/components/messages/LiveVersion'}
+      presence: {$ref: '#/components/messages/LivePresence'}
+      comment: {$ref: '#/components/messages/LiveComment'}
+      heartbeat: {$ref: '#/components/messages/LiveHeartbeat'}
+  frameSync:
+    address: /api/frame/sync
+    description: |
+      Newer multiplexed synchronization connection, inferred from client code.
+      Query slug identifies the artifact and subprotocols contain frame-sync.v1
+      and a short-lived sync token. Authentication, joins and message variants
+      are not fully established by a live experiment.
+    servers:
+      - $ref: '#/servers/claude'
+    bindings:
+      ws:
+        method: GET
+        query:
+          type: object
+          properties:
+            slug: {type: string}
+          required: [slug]
+        headers:
+          type: object
+          properties:
+            Sec-WebSocket-Protocol:
+              type: string
+              description: 'WebSocket subprotocol list: frame-sync.v1, then the sync token.'
+        bindingVersion: 0.1.0
+    messages:
+      control: {$ref: '#/components/messages/SyncControl'}
+      ping: {$ref: '#/components/messages/SyncPing'}
+operations:
+  receiveLiveSignals:
+    action: receive
+    channel: {$ref: '#/channels/frameLive'}
+    summary: Receive version, presence and comment signals.
+    description: A comment signal is not necessarily a comment body; refresh the HTTP comment collection.
+    messages:
+      - {$ref: '#/channels/frameLive/messages/version'}
+      - {$ref: '#/channels/frameLive/messages/presence'}
+      - {$ref: '#/channels/frameLive/messages/comment'}
+  sendLiveHeartbeat:
+    action: send
+    channel: {$ref: '#/channels/frameLive'}
+    description: Client code sends text ping and hb; exact timing and server guarantees are not established.
+    messages:
+      - {$ref: '#/channels/frameLive/messages/heartbeat'}
+  receiveSyncControl:
+    action: receive
+    channel: {$ref: '#/channels/frameSync'}
+    description: Only selected control kinds are identified; this is not the complete sync protocol.
+    messages:
+      - {$ref: '#/channels/frameSync/messages/control'}
+  sendSyncPing:
+    action: send
+    channel: {$ref: '#/channels/frameSync'}
+    messages:
+      - {$ref: '#/channels/frameSync/messages/ping'}
+components:
+  messages:
+    LiveVersion:
+      name: liveVersion
+      title: Version signal
+      x-evidence: observed-read
+      contentType: application/json
+      payload:
+        type: object
+        properties: {ver: {type: string}}
+        required: [ver]
+        additionalProperties: true
+    LivePresence:
+      name: livePresence
+      title: Presence signal
+      x-evidence: observed-read
+      contentType: application/json
+      payload:
+        type: object
+        properties: {kind: {const: presence}}
+        required: [kind]
+        additionalProperties: true
+    LiveComment:
+      name: liveComment
+      title: Comment invalidation signal
+      x-evidence: client-code
+      description: The Claude Code client checks kind; no real comment event was captured.
+      contentType: application/json
+      payload:
+        type: object
+        properties: {kind: {const: comment}}
+        required: [kind]
+        additionalProperties: true
+    LiveHeartbeat:
+      name: liveHeartbeat
+      x-evidence: client-code
+      contentType: text/plain
+      payload: {type: string, enum: [ping, hb]}
+    SyncControl:
+      name: syncControl
+      x-evidence: client-code
+      description: The Claude Code parser recognizes comment, invalidation and token refresh controls among others.
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          kind:
+            type: string
+            examples: ['ctrl:comment', 'ctrl:invalidate', 'ctrl:token_refresh', 'ctrl:token_refresh_declined', 'ctrl:comment_hint']
+          slug: {type: string}
+          payload: {}
+        required: [kind]
+        additionalProperties: true
+    SyncPing:
+      name: syncPing
+      x-evidence: client-code
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          kind: {const: ping}
+          slug: {type: string}
+        required: [kind, slug]
+        additionalProperties: true
